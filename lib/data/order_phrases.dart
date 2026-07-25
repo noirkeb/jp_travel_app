@@ -1,3 +1,5 @@
+import 'package:jp_travel_app/data/japanese_reading.dart';
+
 /// 주문할 메뉴 한 항목 (일본어명 + 한국어명 + 수량).
 class OrderLine {
   final String japanese;
@@ -14,10 +16,14 @@ class OrderLine {
 class OrderPhrase {
   final String japanese; // 점원에게 보여주거나 말할 일본어 문장
   final String korean; // 뜻
+  final String pronunciation; // 한글 발음 (메뉴명 포함, 그대로 읽으면 됨)
+  final bool pronunciationComplete; // 발음을 전부 아는지 (일본어 잔여 없음)
   final List<OrderLine> lines;
   const OrderPhrase({
     required this.japanese,
     required this.korean,
+    required this.pronunciation,
+    required this.pronunciationComplete,
     required this.lines,
   });
 
@@ -53,6 +59,18 @@ class OrderComposer {
         lines.map((l) => '${l.korean} ${koCount(l.quantity)}').join(', ');
     final korean = '저기요, $koParts 주세요.';
 
-    return OrderPhrase(japanese: japanese, korean: korean, lines: lines);
+    // 한글 발음: 스미마셍, 카라아게 테이쇼쿠오 히토츠, … 쿠다사이.
+    final pronParts = lines
+        .map((l) => '${JapaneseReading.toReading(l.japanese)}오 ${jaCounterRead(l.quantity)}')
+        .join(', ');
+    final pronunciation = '스미마셍, $pronParts 쿠다사이.';
+
+    return OrderPhrase(
+      japanese: japanese,
+      korean: korean,
+      pronunciation: pronunciation,
+      pronunciationComplete: !JapaneseReading.hasJapanese(pronunciation),
+      lines: lines,
+    );
   }
 }

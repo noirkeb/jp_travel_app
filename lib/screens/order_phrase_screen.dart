@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:jp_travel_app/data/order_phrases.dart';
 
-/// 선택한 메뉴로 만든 일본어 주문 문장을 보여주는 화면.
-/// 점원에게 화면을 보여주거나, 발음을 참고해 직접 말할 수 있게 안내.
+/// 선택한 메뉴로 만든 주문 문장을 보여주는 화면.
+/// 상단: 그대로 소리 내어 읽는 한글 발음 / 아래: 점원에게 보여줄 일본어 문장.
 class OrderPhraseScreen extends StatelessWidget {
   final OrderPhrase phrase;
   const OrderPhraseScreen({super.key, required this.phrase});
@@ -11,16 +11,16 @@ class OrderPhraseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final qtys = phrase.lines.map((l) => l.quantity).toSet().toList()..sort();
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(phrase.isSingle ? '주문하기 (단품)' : '주문하기 (${phrase.lines.length}종)'),
+        title: Text(
+            phrase.isSingle ? '주문하기 (단품)' : '주문하기 (${phrase.lines.length}종)'),
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 점원에게 보여줄 일본어 문장
+          // ── 상단: 한글 발음 (그대로 읽으면 됨) ──
           Card(
             color: scheme.primaryContainer,
             child: Padding(
@@ -30,9 +30,10 @@ class OrderPhraseScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.storefront, size: 18, color: scheme.onPrimaryContainer),
+                      Icon(Icons.record_voice_over,
+                          size: 18, color: scheme.onPrimaryContainer),
                       const SizedBox(width: 6),
-                      Text('점원에게 이 문장을 보여주세요',
+                      Text('이대로 읽어보세요',
                           style: TextStyle(
                               fontWeight: FontWeight.w600,
                               color: scheme.onPrimaryContainer)),
@@ -40,13 +41,55 @@ class OrderPhraseScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   SelectableText(
-                    phrase.japanese,
+                    phrase.pronunciation,
                     style: TextStyle(
-                      fontSize: 22,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
-                      height: 1.4,
+                      height: 1.5,
                       color: scheme.onPrimaryContainer,
                     ),
+                  ),
+                  if (!phrase.pronunciationComplete) ...[
+                    const SizedBox(height: 10),
+                    Text(
+                      '※ 일부 메뉴는 발음 정보가 없어 일본어로 남아있어요. 그 부분은 아래 일본어 문장을 점원에게 보여주세요.',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          color: scheme.onPrimaryContainer.withValues(alpha: 0.8)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text('뜻 · ${phrase.korean}',
+                style: const TextStyle(fontSize: 15)),
+          ),
+          const SizedBox(height: 20),
+
+          // ── 점원에게 보여줄 일본어 문장 ──
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.storefront, size: 18),
+                      SizedBox(width: 6),
+                      Text('점원에게 보여줘도 돼요 (일본어)',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  SelectableText(
+                    phrase.japanese,
+                    style: const TextStyle(
+                        fontSize: 19, fontWeight: FontWeight.w600, height: 1.4),
                   ),
                   Align(
                     alignment: Alignment.centerRight,
@@ -65,15 +108,9 @@ class OrderPhraseScreen extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Text('뜻 · ${phrase.korean}',
-                style: const TextStyle(fontSize: 15)),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
 
-          // 주문 내역
+          // ── 주문 내역 ──
           const Text('주문 내역', style: TextStyle(fontWeight: FontWeight.bold)),
           for (final l in phrase.lines)
             ListTile(
@@ -85,37 +122,6 @@ class OrderPhraseScreen extends StatelessWidget {
               trailing: Text('${l.quantity}개',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
             ),
-          const Divider(height: 28),
-
-          // 발음 도우미 (고정 표현 + 사용된 수량만)
-          const Text('직접 말해보려면 (발음)',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          _pron('すみません', '스미마셍', '저기요 (점원 부를 때)'),
-          for (final q in qtys)
-            _pron(OrderComposer.jaCounter(q), OrderComposer.jaCounterRead(q),
-                OrderComposer.koCount(q)),
-          _pron('ください', '쿠다사이', '주세요'),
-          const SizedBox(height: 12),
-          Text(
-            '팁 · 메뉴 이름은 발음이 어려우니, 위 일본어 문장을 점원에게 보여주는 게 가장 확실해요.',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _pron(String ja, String read, String meaning) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(ja,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          Text('$read  —  $meaning',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
         ],
       ),
     );
