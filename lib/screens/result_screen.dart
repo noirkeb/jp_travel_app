@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:jp_travel_app/data/menu_filter.dart';
 import 'package:jp_travel_app/models/ocr_block.dart';
 import 'package:jp_travel_app/screens/order_select_screen.dart';
 import 'package:jp_travel_app/services/ocr_service.dart';
@@ -113,14 +114,10 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  /// 주문 후보 메뉴: 번역이 있고, 가격만 있는 줄은 제외.
-  List<OcrBlock> _orderableItems() {
-    final priceOnly = RegExp(r'^[\s\d,.\-~¥￥원엔円]*$');
-    return _result!.blocks
-        .where((b) => b.translatedText.trim().isNotEmpty)
-        .where((b) => !priceOnly.hasMatch(b.translatedText.trim()))
-        .toList();
-  }
+  /// 주문 후보 메뉴만 추림 (가격·제목·설명·주의문 등 제외).
+  List<OcrBlock> _orderableItems() => _result!.blocks
+      .where((b) => MenuFilter.looksOrderable(b.text, b.translatedText))
+      .toList();
 
   Widget _buildBody() {
     if (_isLoading) {
