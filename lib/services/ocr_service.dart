@@ -10,9 +10,9 @@ class OcrService {
   static const _endpoint = 'https://vision.googleapis.com/v1/images:annotate';
 
   Future<List<String>> extractTextLines(Uint8List bytes) async {
-    final apiKey = dotenv.env['GOOGLE_VISION_API_KEY'];
+    final apiKey = dotenv.env['GOOGLE_API_KEY'];
     if (apiKey == null || apiKey.isEmpty) {
-      throw Exception('GOOGLE_VISION_API_KEY가 .env에 설정되지 않았습니다.');
+      throw Exception('GOOGLE_API_KEY가 .env에 설정되지 않았습니다.');
     }
 
     final base64Image = base64Encode(bytes);

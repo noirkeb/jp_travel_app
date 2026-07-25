@@ -33,9 +33,7 @@ jobs:
       - name: Create .env from secrets
         run: |
           cat > .env <<EOF
-          GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }}
-          PAPAGO_CLIENT_ID=${{ secrets.PAPAGO_CLIENT_ID }}
-          PAPAGO_CLIENT_SECRET=${{ secrets.PAPAGO_CLIENT_SECRET }}
+          GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
           EOF
 
       - run: flutter pub get
