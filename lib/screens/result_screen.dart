@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:jp_travel_app/models/ocr_block.dart';
+import 'package:jp_travel_app/screens/order_select_screen.dart';
 import 'package:jp_travel_app/services/ocr_service.dart';
 import 'package:jp_travel_app/services/translation_service.dart';
 
@@ -83,7 +84,42 @@ class _ResultScreenState extends State<ResultScreen> {
         ],
       ),
       body: _buildBody(),
+      bottomNavigationBar: _result == null ? null : _orderBar(),
     );
+  }
+
+  /// 하단 "주문하기" 버튼 - 번역 완료 후에만 표시.
+  Widget _orderBar() {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: FilledButton.icon(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OrderSelectScreen(items: _orderableItems()),
+                ),
+              );
+            },
+            icon: const Icon(Icons.restaurant_menu),
+            label: const Text('주문하기'),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 주문 후보 메뉴: 번역이 있고, 가격만 있는 줄은 제외.
+  List<OcrBlock> _orderableItems() {
+    final priceOnly = RegExp(r'^[\s\d,.\-~¥￥원엔円]*$');
+    return _result!.blocks
+        .where((b) => b.translatedText.trim().isNotEmpty)
+        .where((b) => !priceOnly.hasMatch(b.translatedText.trim()))
+        .toList();
   }
 
   Widget _buildBody() {
