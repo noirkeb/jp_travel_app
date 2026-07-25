@@ -1,33 +1,56 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:jp_travel_app/data/menu_dictionary.dart';
 
-/// 일본어 문장들을 Google Cloud Translation API로 한국어로 번역.
+/// 일본어 메뉴 줄들을 한국어로 번역.
 ///
-/// Papago는 브라우저 CORS로 웹에서 막혀 Google 번역으로 교체됨.
+/// 하이브리드 방식:
+///  1) 먼저 요리명 사전으로 시도 (자주 나오는 메뉴는 자연스럽게)
+///  2) 사전으로 안 되는 줄만 모아 Google Translation API로 배치 번역
 /// OCR(Vision)과 같은 Google API 키(GOOGLE_API_KEY)를 사용한다.
 class TranslationService {
   static const _endpoint =
       'https://translation.googleapis.com/language/translate/v2';
 
-  String get _apiKey {
-    final key = dotenv.env['GOOGLE_API_KEY'];
-    if (key == null || key.isEmpty) {
-      throw Exception('GOOGLE_API_KEY가 .env에 설정되지 않았습니다.');
+  Future<List<String>> translateLines(List<String> lines) async {
+    final results = List<String>.filled(lines.length, '');
+    final pendingIndexes = <int>[];
+    final pendingTexts = <String>[];
+
+    for (var i = 0; i < lines.length; i++) {
+      final fromDict = MenuDictionary.tryTranslate(lines[i]);
+      if (fromDict != null) {
+        results[i] = fromDict;
+      } else {
+        pendingIndexes.add(i);
+        pendingTexts.add(lines[i]);
+      }
     }
-    return key;
+
+    if (pendingTexts.isNotEmpty) {
+      final translated = await _googleTranslate(pendingTexts);
+      for (var k = 0; k < pendingIndexes.length; k++) {
+        results[pendingIndexes[k]] =
+            k < translated.length ? translated[k] : '';
+      }
+    }
+
+    return results;
   }
 
-  /// 여러 줄을 한 번의 요청으로 배치 번역 (줄마다 개별 호출보다 훨씬 빠름).
-  /// 입력 순서와 동일한 순서로 번역 결과를 반환.
-  Future<List<String>> translateLines(List<String> lines) async {
-    if (lines.isEmpty) return [];
+  /// 여러 문장을 한 번의 요청으로 배치 번역.
+  Future<List<String>> _googleTranslate(List<String> texts) async {
+    final apiKey = dotenv.env['GOOGLE_API_KEY'];
+    if (apiKey == null || apiKey.isEmpty) {
+      throw Exception('GOOGLE_API_KEY가 .env에 설정되지 않았습니다.');
+    }
 
     final response = await http.post(
-      Uri.parse('$_endpoint?key=$_apiKey'),
+      Uri.parse('$_endpoint?key=$apiKey'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'q': lines, // 배열로 여러 개 한 번에 전송
+        'q': texts,
         'source': 'ja',
         'target': 'ko',
         'format': 'text',
@@ -47,12 +70,5 @@ class TranslationService {
     return translations
         .map((t) => (t['translatedText'] ?? '').toString())
         .toList();
-  }
-
-  /// 단일 문장 번역 (편의용).
-  Future<String> translateJaToKo(String text) async {
-    if (text.trim().isEmpty) return '';
-    final result = await translateLines([text]);
-    return result.isNotEmpty ? result.first : '';
   }
 }
