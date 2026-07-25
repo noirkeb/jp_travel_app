@@ -151,7 +151,11 @@ class _OverlayView extends StatelessWidget {
                       top: b.box.top * scale,
                       width: b.box.width * scale,
                       height: b.box.height * scale,
-                      child: _OverlayLabel(text: b.translatedText),
+                      // 글자 영역이 세로로 길면(세로쓰기) 번역도 세로로 나열
+                      child: _OverlayLabel(
+                        text: b.translatedText,
+                        vertical: b.box.height > b.box.width * 1.7,
+                      ),
                     ),
               ],
             ),
@@ -163,30 +167,41 @@ class _OverlayView extends StatelessWidget {
 }
 
 /// 원본 글자를 덮는 반투명 흰 배경 + 번역 텍스트 (칸에 맞춰 자동 축소).
+/// vertical=true면 원본이 세로쓰기이므로 번역 글자도 위→아래로 쌓는다.
 class _OverlayLabel extends StatelessWidget {
   final String text;
-  const _OverlayLabel({required this.text});
+  final bool vertical;
+  const _OverlayLabel({required this.text, this.vertical = false});
+
+  static const _style = TextStyle(
+    color: Colors.black,
+    fontWeight: FontWeight.w700,
+    height: 1.05,
+  );
 
   @override
   Widget build(BuildContext context) {
+    final Widget content;
+    if (vertical) {
+      // 공백 제외한 글자를 한 글자씩 세로로 나열
+      final chars =
+          text.replaceAll(' ', '').characters.where((c) => c.isNotEmpty);
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [for (final c in chars) Text(c, style: _style)],
+      );
+    } else {
+      content = Text(text, textAlign: TextAlign.center, style: _style);
+    }
+
     return Container(
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(3),
       ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          text,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ),
+      child: FittedBox(fit: BoxFit.scaleDown, child: content),
     );
   }
 }
