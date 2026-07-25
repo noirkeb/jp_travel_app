@@ -39,7 +39,8 @@ jobs:
       - run: flutter pub get
 
       # GitHub Pages는 https://<user>.github.io/jp_travel_app/ 로 서빙되므로 base-href 지정
-      - run: flutter build web --release --base-href /jp_travel_app/
+      # --pwa-strategy=none: 서비스워커 캐싱 끔 → 배포 후 새로고침만 하면 바로 최신 버전
+      - run: flutter build web --release --base-href /jp_travel_app/ --pwa-strategy=none
 
       - uses: actions/upload-pages-artifact@v3
         with:
