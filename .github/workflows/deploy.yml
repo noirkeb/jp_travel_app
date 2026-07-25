@@ -1,0 +1,58 @@
+name: Build and Deploy Web
+
+# main 브랜치에 푸시할 때마다 클라우드(Linux)에서 웹 빌드 후 GitHub Pages에 배포.
+# 이 PC의 Smart App Control과 무관하게 빌드됨 (impellerc는 Linux에서 정상 동작).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # 수동 실행 버튼
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.44.6
+
+      # API 키는 저장소에 커밋하지 않고 GitHub Secrets에서 빌드 시점에 주입.
+      # (주의: 웹 빌드 결과물에는 키가 포함되므로 링크를 아는 사람은 볼 수 있음)
+      - name: Create .env from secrets
+        run: |
+          cat > .env <<EOF
+          GOOGLE_VISION_API_KEY=${{ secrets.GOOGLE_VISION_API_KEY }}
+          PAPAGO_CLIENT_ID=${{ secrets.PAPAGO_CLIENT_ID }}
+          PAPAGO_CLIENT_SECRET=${{ secrets.PAPAGO_CLIENT_SECRET }}
+          EOF
+
+      - run: flutter pub get
+
+      # GitHub Pages는 https://<user>.github.io/jp_travel_app/ 로 서빙되므로 base-href 지정
+      - run: flutter build web --release --base-href /jp_travel_app/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
