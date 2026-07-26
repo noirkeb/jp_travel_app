@@ -21,7 +21,6 @@ class _ResultScreenState extends State<ResultScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   OcrResult? _result;
-  bool _showOverlay = true; // true: 사진 위 오버레이, false: 목록
 
   @override
   void initState() {
@@ -31,7 +30,6 @@ class _ResultScreenState extends State<ResultScreen> {
 
   Future<void> _processImage() async {
     try {
-      // 1. OCR: 줄 단위 텍스트 + 위치 좌표
       final ocr = await _ocrService.detectLines(widget.imageBytes);
       if (ocr.isEmpty) {
         if (!mounted) return;
@@ -42,7 +40,6 @@ class _ResultScreenState extends State<ResultScreen> {
         return;
       }
 
-      // 2. 번역: 모든 줄을 한 번에 배치 번역
       final translated = await _translationService
           .translateLines(ocr.blocks.map((b) => b.text).toList());
       for (var i = 0; i < ocr.blocks.length; i++) {
@@ -67,17 +64,7 @@ class _ResultScreenState extends State<ResultScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('번역 결과'),
-        actions: [
-          if (_result != null)
-            IconButton(
-              tooltip: _showOverlay ? '목록으로 보기' : '사진 위에 보기',
-              icon: Icon(_showOverlay ? Icons.list : Icons.photo),
-              onPressed: () => setState(() => _showOverlay = !_showOverlay),
-            ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('번역 결과')),
       body: _buildBody(),
       // 컴팩트한 "주문하기" 버튼을 하단 중앙에 배치
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
@@ -98,10 +85,35 @@ class _ResultScreenState extends State<ResultScreen> {
     );
   }
 
-  /// 주문 후보 메뉴만 추림 (가격·제목·설명·주의문 등 제외).
-  List<OcrBlock> _orderableItems() => _result!.blocks
-      .where((b) => MenuFilter.looksOrderable(b.text, b.translatedText))
-      .toList();
+  /// 주문 후보 메뉴만 추림.
+  /// 1) 텍스트 휴리스틱(가격·제목·설명 제외)
+  /// 2) 가격이 있는 메뉴판이면, 같은 행에 가격이 있는 줄만 남김(제목·설명 추가 제거)
+  List<OcrBlock> _orderableItems() {
+    final blocks = _result!.blocks;
+    final priceBoxes = [for (final b in blocks) if (_isPrice(b.text)) b.box];
+    final hasPriceColumn = priceBoxes.length >= 3;
+
+    return blocks.where((b) {
+      if (!MenuFilter.looksOrderable(b.text, b.translatedText)) return false;
+      if (!hasPriceColumn) return true; // 가격 없는 메뉴판은 텍스트 필터만
+      if (_containsPrice(b.text)) return true; // 항목 안에 가격 포함
+      return _hasNearbyPrice(b.box, priceBoxes); // 같은 행에 가격이 있음
+    }).toList();
+  }
+
+  static final _priceOnlyRe = RegExp(r'^[¥￥]?\s*\d[\d,]*\s*円?$');
+  static final _hasPriceRe = RegExp(r'[¥￥円]|\d{2,}');
+  bool _isPrice(String t) => _priceOnlyRe.hasMatch(t.trim());
+  bool _containsPrice(String t) => _hasPriceRe.hasMatch(t);
+
+  bool _hasNearbyPrice(Rect box, List<Rect> prices) {
+    final cy = box.center.dy;
+    final tol = box.height * 0.9;
+    for (final p in prices) {
+      if ((p.center.dy - cy).abs() <= tol) return true;
+    }
+    return false;
+  }
 
   Widget _buildBody() {
     if (_isLoading) {
@@ -127,10 +139,11 @@ class _ResultScreenState extends State<ResultScreen> {
     }
 
     final result = _result!;
-    if (_showOverlay && result.imageWidth > 0) {
+    if (result.imageWidth > 0) {
       return _OverlayView(bytes: widget.imageBytes, result: result);
     }
-    return _ListView(bytes: widget.imageBytes, result: result);
+    // 드문 경우: 이미지 크기 정보 없음 → 사진만 표시
+    return Center(child: Image.memory(widget.imageBytes));
   }
 }
 
@@ -144,12 +157,10 @@ class _OverlayView extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        // 원본 이미지 픽셀 좌표 -> 화면 표시 크기로 비례 변환
         final scale = constraints.maxWidth / result.imageWidth;
         final displayW = constraints.maxWidth;
         final displayH = result.imageHeight * scale;
 
-        // InteractiveViewer로 두 손가락 확대/이동 지원
         return InteractiveViewer(
           constrained: false,
           minScale: 1,
@@ -167,17 +178,7 @@ class _OverlayView extends StatelessWidget {
                 ),
                 for (final b in result.blocks)
                   if (b.translatedText.trim().isNotEmpty)
-                    Positioned(
-                      left: b.box.left * scale,
-                      top: b.box.top * scale,
-                      width: b.box.width * scale,
-                      height: b.box.height * scale,
-                      // 글자 영역이 세로로 길면(세로쓰기) 번역도 세로로 나열
-                      child: _OverlayLabel(
-                        text: b.translatedText,
-                        vertical: b.box.height > b.box.width * 1.7,
-                      ),
-                    ),
+                    _label(b, scale),
               ],
             ),
           ),
@@ -185,99 +186,73 @@ class _OverlayView extends StatelessWidget {
       },
     );
   }
-}
 
-/// 원본 글자를 덮는 반투명 흰 배경 + 번역 텍스트 (칸에 맞춰 자동 축소).
-/// vertical=true면 원본이 세로쓰기이므로 번역 글자도 위→아래로 쌓는다.
-class _OverlayLabel extends StatelessWidget {
-  final String text;
-  final bool vertical;
-  const _OverlayLabel({required this.text, this.vertical = false});
+  Widget _label(OcrBlock b, double scale) {
+    final w = b.box.width * scale;
+    final h = b.box.height * scale;
+    final vertical = b.box.height > b.box.width * 1.7;
+    // 칸 크기에 비례하되 최소 12px 보장(너무 작아지지 않게)
+    final fontSize = ((vertical ? w : h) * 0.72).clamp(12.0, 22.0);
 
-  static const _style = TextStyle(
-    color: Colors.black,
-    fontWeight: FontWeight.w700,
-    height: 1.05,
-  );
-
-  @override
-  Widget build(BuildContext context) {
-    final Widget content;
     if (vertical) {
-      // 공백 제외한 글자를 한 글자씩 세로로 나열
-      final chars =
-          text.replaceAll(' ', '').characters.where((c) => c.isNotEmpty);
-      content = Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [for (final c in chars) Text(c, style: _style)],
+      // 세로쓰기: 위치만 고정하고 내용 크기대로 (세로로 글자 쌓임)
+      return Positioned(
+        left: b.box.left * scale,
+        top: b.box.top * scale,
+        child: _OverlayLabel(
+            text: b.translatedText, vertical: true, fontSize: fontSize),
       );
-    } else {
-      content = Text(text, textAlign: TextAlign.center, style: _style);
     }
-
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(3),
-      ),
-      child: FittedBox(fit: BoxFit.scaleDown, child: content),
+    // 가로쓰기: 가로폭만 맞추고 필요 시 줄바꿈(높이는 자동)
+    return Positioned(
+      left: b.box.left * scale,
+      top: b.box.top * scale,
+      width: w,
+      child: _OverlayLabel(text: b.translatedText, fontSize: fontSize),
     );
   }
 }
 
-/// 목록(카드) 보기 - 오버레이가 겹쳐 보기 어려울 때 대안.
-class _ListView extends StatelessWidget {
-  final Uint8List bytes;
-  final OcrResult result;
-  const _ListView({required this.bytes, required this.result});
+/// 원본 글자를 덮는 반투명 흰 배경 + 번역 텍스트.
+class _OverlayLabel extends StatelessWidget {
+  final String text;
+  final bool vertical;
+  final double fontSize;
+  const _OverlayLabel({
+    required this.text,
+    required this.fontSize,
+    this.vertical = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        SizedBox(
-          height: 160,
-          width: double.infinity,
-          child: Image.memory(bytes, fit: BoxFit.cover),
-        ),
-        const Divider(height: 1),
-        Expanded(
-          child: ListView.separated(
-            // 하단 FAB에 가리지 않게 여유 패딩
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-            itemCount: result.blocks.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (context, i) {
-              final b = result.blocks[i];
-              return Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        b.text,
-                        style:
-                            const TextStyle(fontSize: 14, color: Colors.grey),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        b.translatedText,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+    final style = TextStyle(
+      color: Colors.black,
+      fontWeight: FontWeight.w700,
+      height: 1.05,
+      fontSize: fontSize,
+    );
+
+    final Widget content;
+    if (vertical) {
+      final chars =
+          text.replaceAll(' ', '').characters.where((c) => c.isNotEmpty);
+      content = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [for (final c in chars) Text(c, style: style)],
+      );
+    } else {
+      content = Text(text, textAlign: TextAlign.center, style: style);
+    }
+
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(3),
+      ),
+      child: content,
     );
   }
 }
