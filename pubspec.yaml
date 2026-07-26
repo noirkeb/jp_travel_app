@@ -9,12 +9,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  camera: ^0.10.5+9          # 카메라 촬영
   http: ^1.2.0                # OCR/번역 API 호출
-  image_picker: ^1.0.7        # 갤러리에서 이미지 선택 (테스트용)
-  path_provider: ^2.1.2       # 임시 파일 저장
+  image_picker: ^1.0.7        # 카메라 촬영 / 사진 선택
+  file_picker: ^8.0.0         # 파일 선택
   flutter_dotenv: ^5.1.0      # API 키를 .env로 관리 (코드에 하드코딩 금지)
-  provider: ^6.1.2            # 간단한 상태관리
 
 dev_dependencies:
   flutter_test:

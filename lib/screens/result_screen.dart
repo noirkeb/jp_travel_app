@@ -1,6 +1,5 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:jp_travel_app/data/menu_filter.dart';
 import 'package:jp_travel_app/models/ocr_block.dart';
 import 'package:jp_travel_app/screens/order_select_screen.dart';
@@ -8,8 +7,8 @@ import 'package:jp_travel_app/services/ocr_service.dart';
 import 'package:jp_travel_app/services/translation_service.dart';
 
 class ResultScreen extends StatefulWidget {
-  final XFile imageFile;
-  const ResultScreen({super.key, required this.imageFile});
+  final Uint8List imageBytes;
+  const ResultScreen({super.key, required this.imageBytes});
 
   @override
   State<ResultScreen> createState() => _ResultScreenState();
@@ -22,7 +21,6 @@ class _ResultScreenState extends State<ResultScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   OcrResult? _result;
-  Uint8List? _imageBytes;
   bool _showOverlay = true; // true: 사진 위 오버레이, false: 목록
 
   @override
@@ -33,12 +31,8 @@ class _ResultScreenState extends State<ResultScreen> {
 
   Future<void> _processImage() async {
     try {
-      final bytes = await widget.imageFile.readAsBytes();
-      if (!mounted) return;
-      setState(() => _imageBytes = bytes);
-
       // 1. OCR: 줄 단위 텍스트 + 위치 좌표
-      final ocr = await _ocrService.detectLines(bytes);
+      final ocr = await _ocrService.detectLines(widget.imageBytes);
       if (ocr.isEmpty) {
         if (!mounted) return;
         setState(() {
@@ -85,32 +79,22 @@ class _ResultScreenState extends State<ResultScreen> {
         ],
       ),
       body: _buildBody(),
-      bottomNavigationBar: _result == null ? null : _orderBar(),
-    );
-  }
-
-  /// 하단 "주문하기" 버튼 - 번역 완료 후에만 표시.
-  Widget _orderBar() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: FilledButton.icon(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => OrderSelectScreen(items: _orderableItems()),
-                ),
-              );
-            },
-            icon: const Icon(Icons.restaurant_menu),
-            label: const Text('주문하기'),
-          ),
-        ),
-      ),
+      // 컴팩트한 "주문하기" 버튼을 하단 중앙에 배치
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: _result == null
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => OrderSelectScreen(items: _orderableItems()),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.restaurant_menu),
+              label: const Text('주문하기'),
+            ),
     );
   }
 
@@ -143,14 +127,14 @@ class _ResultScreenState extends State<ResultScreen> {
     }
 
     final result = _result!;
-    if (_showOverlay && _imageBytes != null && result.imageWidth > 0) {
-      return _OverlayView(bytes: _imageBytes!, result: result);
+    if (_showOverlay && result.imageWidth > 0) {
+      return _OverlayView(bytes: widget.imageBytes, result: result);
     }
-    return _ListView(bytes: _imageBytes, result: result);
+    return _ListView(bytes: widget.imageBytes, result: result);
   }
 }
 
-/// 원본 사진 위 같은 위치에 번역을 겹쳐 그리는 뷰.
+/// 원본 사진 위 같은 위치에 번역을 겹쳐 그리는 뷰. 핀치 줌으로 확대 가능.
 class _OverlayView extends StatelessWidget {
   final Uint8List bytes;
   final OcrResult result;
@@ -165,7 +149,11 @@ class _OverlayView extends StatelessWidget {
         final displayW = constraints.maxWidth;
         final displayH = result.imageHeight * scale;
 
-        return SingleChildScrollView(
+        // InteractiveViewer로 두 손가락 확대/이동 지원
+        return InteractiveViewer(
+          constrained: false,
+          minScale: 1,
+          maxScale: 5,
           child: SizedBox(
             width: displayW,
             height: displayH,
@@ -241,7 +229,7 @@ class _OverlayLabel extends StatelessWidget {
 
 /// 목록(카드) 보기 - 오버레이가 겹쳐 보기 어려울 때 대안.
 class _ListView extends StatelessWidget {
-  final Uint8List? bytes;
+  final Uint8List bytes;
   final OcrResult result;
   const _ListView({required this.bytes, required this.result});
 
@@ -249,16 +237,16 @@ class _ListView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        if (bytes != null)
-          SizedBox(
-            height: 160,
-            width: double.infinity,
-            child: Image.memory(bytes!, fit: BoxFit.cover),
-          ),
+        SizedBox(
+          height: 160,
+          width: double.infinity,
+          child: Image.memory(bytes, fit: BoxFit.cover),
+        ),
         const Divider(height: 1),
         Expanded(
           child: ListView.separated(
-            padding: const EdgeInsets.all(16),
+            // 하단 FAB에 가리지 않게 여유 패딩
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
             itemCount: result.blocks.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (context, i) {
